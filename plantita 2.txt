@@ -1,0 +1,1643 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simulador 3D - Estación de Agua Potable Pescaito | Álgebra y Geometría Analítica</title>
+
+  <!-- KaTeX CSS para renderizado matemático -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+
+  <!-- Import Map para Three.js ES Modules sin build tools -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+      }
+    }
+  </script>
+  <!-- KaTeX JS -->
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+</head>
+<body>
+  <!-- Contenedor del Canvas 3D -->
+  <div id="canvas-container"></div>
+
+  <!-- Barra Superior HUD -->
+  <header class="top-bar">
+    <div class="brand">
+      <div class="badge">SANTA MARTA • PESCAITO</div>
+      <h1>Estación Hídrica 3D <span class="subtitle">| Álgebra y Geometría Analítica</span></h1>
+    </div>
+    <div class="demographics-pill">
+      <span>👥 17.000 hab. (3.400 viv.)</span>
+      <span>💧 Demanda: <strong>2.550 m³/día</strong> (29.51 L/s)</span>
+      <span>🛢️ Tanque: <strong>50 m³</strong> (50.000 L)</span>
+    </div>
+  </header>
+
+  <!-- Botón Toggle para móviles / pantallas pequeñas -->
+  <button id="toggle-panel-btn" class="toggle-btn" title="Mostrar/Ocultar Panel">☰ Panel</button>
+
+  <!-- Panel Lateral de Control y Matemáticas en Tiempo Real -->
+  <aside id="control-panel" class="sidebar">
+    <!-- Pestañas de Navegación -->
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="hydraulics">💧 Hidráulica</button>
+      <button class="tab-btn" data-tab="vectors">↗️ Vectores & Rectas</button>
+      <button class="tab-btn" data-tab="planes">📐 Planos & Cuádricas</button>
+      <button class="tab-btn" data-tab="transforms">🔄 Matrices</button>
+    </nav>
+
+    <!-- TAB 1: CONTROL HIDRÁULICO Y BOMBAS -->
+    <section id="tab-hydraulics" class="tab-content active">
+      <h2>Control de Estación de Bombeo</h2>
+      <p class="desc">Cada bomba impulsa agua desde el colector ($\mathbb{R}^3$) hacia el tanque elevado de $50\text{ m}^3$.</p>
+
+      <div class="tank-status-card">
+        <div class="tank-header">
+          <span>Nivel Tanque Cisterna</span>
+          <strong id="tank-percent">60.0%</strong>
+        </div>
+        <div class="progress-bg">
+          <div id="tank-bar" class="progress-fill" style="width: 60%;"></div>
+        </div>
+        <div class="tank-metrics">
+          <span>Volumen: <strong id="tank-volume">30.00 m³</strong></span>
+          <span>Altura $h$: <strong id="tank-height">1.91 m</strong></span>
+        </div>
+      </div>
+
+      <div class="pumps-grid" id="pumps-container">
+        <!-- Generado dinámicamente por uiController.js -->
+      </div>
+
+      <div class="balance-card">
+        <div>Caudal Entrada ($Q_{\text{in}}$): <strong id="q-in" class="text-cyan">0.0 L/s</strong></div>
+        <div>Demanda Pescaito ($Q_{\text{out}}$): <strong id="q-out" class="text-amber">29.51 L/s</strong></div>
+        <div>Balance Neto ($\Delta Q$): <strong id="q-net">0.0 L/s</strong></div>
+        <div class="sim-speed">
+          <label for="sim-speed-slider">Velocidad Simulación: <span id="sim-speed-val">60x</span></label>
+          <input type="range" id="sim-speed-slider" min="1" max="300" value="60" />
+        </div>
+      </div>
+
+      <div class="camera-presets">
+        <h3>Vistas de Cámara</h3>
+        <div class="btn-group">
+          <button class="btn-sm" data-cam="overview">General</button>
+          <button class="btn-sm" data-cam="pumps">Bombas</button>
+          <button class="btn-sm" data-cam="tank">Tanque</button>
+          <button class="btn-sm" data-cam="control">Caseta</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: VECTORES Y RECTAS EN R³ -->
+    <section id="tab-vectors" class="tab-content">
+      <h2>Vectores y Rectas en $\mathbb{R}^3$</h2>
+      <p class="desc">Selecciona dos bombas activas o nodos para calcular vectores desplazamiento $\vec{u}, \vec{v}$ y la recta de la tubería.</p>
+
+      <div class="selector-row">
+        <div>
+          <label>Bomba Origen $A$:</label>
+          <select id="vec-pump-a">
+            <option value="0">Bomba 1 (P1)</option>
+            <option value="1">Bomba 2 (P2)</option>
+            <option value="2">Bomba 3 (P3)</option>
+            <option value="3">Bomba 4 (P4)</option>
+          </select>
+        </div>
+        <div>
+          <label>Bomba Comparación $B$:</label>
+          <select id="vec-pump-b">
+            <option value="1" selected>Bomba 2 (P2)</option>
+            <option value="0">Bomba 1 (P1)</option>
+            <option value="2">Bomba 3 (P3)</option>
+            <option value="3">Bomba 4 (P4)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="toggle-row">
+        <label><input type="checkbox" id="vis-vectors" checked /> Mostrar Vectores $\vec{u}, \vec{v}, \vec{u}\times\vec{v}$ en 3D</label>
+        <label><input type="checkbox" id="vis-lines" checked /> Mostrar Recta $L_1$ y Proyección</label>
+      </div>
+
+      <div id="math-vectors-output" class="math-box"></div>
+    </section>
+
+    <!-- TAB 3: PLANOS Y SUPERFICIES CUÁDRICAS -->
+    <section id="tab-planes" class="tab-content">
+      <h2>Planos y Superficies en $\mathbb{R}^3$</h2>
+      <p class="desc">Plano de corte hidráulico $\Pi: Ax + By + Cz + D = 0$ intersectando la tubería principal y la torre.</p>
+
+      <div class="slider-control">
+        <label>Altura del Plano Horizontal ($y_0$): <span id="plane-y-val">8.0 m</span></label>
+        <input type="range" id="plane-y-slider" min="1" max="17" step="0.5" value="8.0" />
+      </div>
+
+      <div class="slider-control">
+        <label>Inclinación Normal ($\theta_x$): <span id="plane-tilt-val">0°</span></label>
+        <input type="range" id="plane-tilt-slider" min="-35" max="35" step="1" value="0" />
+      </div>
+
+      <div class="toggle-row">
+        <label><input type="checkbox" id="vis-plane" checked /> Renderizar Plano $\Pi$ y Vector Normal $\vec{n}$</label>
+        <label><input type="checkbox" id="vis-quadrics" checked /> Resaltar Superficies Cuádricas</label>
+      </div>
+
+      <div id="math-planes-output" class="math-box"></div>
+    </section>
+
+    <!-- TAB 4: TRANSFORMACIONES LINEALES Y MATRICES -->
+    <section id="tab-transforms" class="tab-content">
+      <h2>Transformaciones Matriciales ($4\times 4$)</h2>
+      <p class="desc">Aplica transformaciones afines en coordenadas homogéneas sobre la <strong>Caseta de Control</strong>.</p>
+
+      <div class="slider-control">
+        <label>Traslación $\Delta X$: <span id="trans-x-val">0.0 m</span></label>
+        <input type="range" id="trans-x" min="-6" max="6" step="0.5" value="0" />
+      </div>
+      <div class="slider-control">
+        <label>Traslación $\Delta Z$: <span id="trans-z-val">0.0 m</span></label>
+        <input type="range" id="trans-z" min="-6" max="6" step="0.5" value="0" />
+      </div>
+      <div class="slider-control">
+        <label>Rotación $R_y(\theta)$: <span id="rot-y-val">0°</span></label>
+        <input type="range" id="rot-y" min="-180" max="180" step="5" value="0" />
+      </div>
+      <div class="slider-control">
+        <label>Escalamiento Uniforme $S(k)$: <span id="scale-k-val">1.00x</span></label>
+        <input type="range" id="scale-k" min="0.6" max="1.5" step="0.05" value="1" />
+      </div>
+
+      <button id="reset-transform-btn" class="btn-primary">Restaurar Matriz Identidad $I_4$</button>
+
+      <div id="math-matrix-output" class="math-box"></div>
+    </section>
+  </aside>
+
+  <!-- Leyenda inferior de controles de navegación -->
+  <footer class="controls-hint">
+    🖱️ <strong>Click Izq:</strong> Rotar cámara • <strong>Click Der:</strong> Desplazar • <strong>Rueda:</strong> Zoom • <strong>Click en Bomba:</strong> Encender/Apagar
+  </footer>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
+:root {
+  --bg-dark: #0b1120;
+  --panel-bg: rgba(15, 23, 42, 0.88);
+  --border-color: rgba(56, 189, 248, 0.25);
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+  --accent-cyan: #38bdf8;
+  --accent-blue: #0284c7;
+  --accent-emerald: #10b981;
+  --accent-amber: #f59e0b;
+  --accent-rose: #f43f5e;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+
+#canvas-container {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+}
+
+/* Barra Superior */
+.top-bar {
+  position: fixed;
+  top: 14px;
+  left: 16px;
+  right: 430px;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 10px 16px;
+  pointer-events: auto;
+}
+
+.brand .badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent-cyan);
+  background: rgba(56, 189, 248, 0.15);
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-bottom: 3px;
+}
+
+.brand h1 {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.brand .subtitle {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.demographics-pill {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  background: rgba(30, 41, 59, 0.7);
+  padding: 6px 12px;
+  border-radius: 8px;
+}
+
+/* Panel Lateral */
+.sidebar {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  bottom: 14px;
+  width: 400px;
+  z-index: 15;
+  background: var(--panel-bg);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  transition: transform 0.3s ease;
+}
+
+.sidebar.collapsed {
+  transform: translateX(430px);
+}
+
+.toggle-btn {
+  display: none;
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  background: var(--accent-blue);
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Pestañas */
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  background: rgba(15, 23, 42, 0.95);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 11px 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  color: var(--text-main);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.tab-btn.active {
+  color: var(--accent-cyan);
+  border-bottom-color: var(--accent-cyan);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.tab-content {
+  display: none;
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+.tab-content h2 {
+  font-size: 1rem;
+  margin-bottom: 6px;
+  color: #f8fafc;
+}
+
+.desc {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  line-height: 1.4;
+}
+
+/* Tarjeta Tanque */
+.tank-status-card, .balance-card {
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.tank-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+}
+
+.progress-bg {
+  width: 100%;
+  height: 10px;
+  background: #0f172a;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #0284c7, #38bdf8);
+  transition: width 0.2s ease;
+}
+
+.tank-metrics {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+}
+
+/* Grid de Bombas */
+.pumps-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.pump-card {
+  background: rgba(30, 41, 59, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  padding: 10px;
+  transition: border-color 0.2s;
+}
+
+.pump-card.active {
+  border-color: var(--accent-emerald);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.15);
+}
+
+.pump-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.pump-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.pump-toggle {
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: none;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: #334155;
+  color: #cbd5e1;
+}
+
+.pump-card.active .pump-toggle {
+  background: var(--accent-emerald);
+  color: #022c22;
+}
+
+.pump-coords {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.pump-card input[type="range"] {
+  width: 100%;
+}
+
+.pump-flow-label {
+  font-size: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+}
+
+/* Balance y Sliders */
+.balance-card {
+  font-size: 0.82rem;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.text-cyan { color: var(--accent-cyan); }
+.text-amber { color: var(--accent-amber); }
+.text-emerald { color: var(--accent-emerald); }
+.text-rose { color: var(--accent-rose); }
+
+.sim-speed {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.sim-speed input, .slider-control input {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.slider-control {
+  margin-bottom: 12px;
+  font-size: 0.82rem;
+}
+
+.selector-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 0.8rem;
+}
+
+select {
+  width: 100%;
+  margin-top: 4px;
+  background: #1e293b;
+  color: white;
+  border: 1px solid var(--border-color);
+  padding: 6px;
+  border-radius: 6px;
+}
+
+.toggle-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8rem;
+  margin-bottom: 12px;
+}
+
+/* Caja de Fórmulas Matemáticas */
+.math-box {
+  background: #090d16;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  overflow-x: auto;
+}
+
+.math-section {
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed rgba(148, 163, 184, 0.2);
+}
+
+.math-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.math-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--accent-cyan);
+  margin-bottom: 4px;
+}
+
+/* Botones */
+.camera-presets h3 {
+  font-size: 0.82rem;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+}
+
+.btn-group {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.btn-sm, .btn-primary {
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: var(--accent-cyan);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-sm:hover, .btn-primary:hover {
+  background: var(--accent-cyan);
+  color: #0f172a;
+}
+
+.btn-primary {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 12px;
+}
+
+.controls-hint {
+  position: fixed;
+  bottom: 12px;
+  left: 16px;
+  z-index: 10;
+  background: rgba(15, 23, 42, 0.75);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+/* Responsive */
+@media (max-width: 920px) {
+  .top-bar {
+    right: 16px;
+    top: 56px;
+  }
+  .toggle-btn {
+    display: block;
+  }
+  .sidebar {
+    top: 56px;
+    width: calc(100vw - 32px);
+    max-width: 400px;
+  }
+  .controls-hint {
+    display: none;
+  }
+}
+/**
+ * Motor matemático puro para cálculos en R³:
+ * Vectores, Producto Punto, Producto Cruz, Proyecciones,
+ * Rectas (vectorial, paramétrica, simétrica), Planos, Distancias y Matrices 4x4.
+ */
+
+export const MathEngine = {
+  // Vector desplazamiento AB = B - A
+  subtract(b, a) {
+    return { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+  },
+
+  add(a, b) {
+    return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+  },
+
+  scale(v, s) {
+    return { x: v.x * s, y: v.y * s, z: v.z * s };
+  },
+
+  // Norma / Magnitud ||v||
+  magnitude(v) {
+    return Math.hypot(v.x, v.y, v.z);
+  },
+
+  // Vector unitario
+  normalize(v) {
+    const m = this.magnitude(v);
+    return m === 0 ? { x: 0, y: 0, z: 0 } : { x: v.x / m, y: v.y / m, z: v.z / m };
+  },
+
+  // Producto punto u · v
+  dot(u, v) {
+    return u.x * v.x + u.y * v.y + u.z * v.z;
+  },
+
+  // Producto cruz u x v
+  cross(u, v) {
+    return {
+      x: u.y * v.z - u.z * v.y,
+      y: u.z * v.x - u.x * v.z,
+      z: u.x * v.y - u.y * v.x
+    };
+  },
+
+  // Ángulo en grados entre dos vectores
+  angleBetweenDeg(u, v) {
+    const denom = this.magnitude(u) * this.magnitude(v);
+    if (denom === 0) return 0;
+    const cosTheta = Math.max(-1, Math.min(1, this.dot(u, v) / denom));
+    return (Math.acos(cosTheta) * 180) / Math.PI;
+  },
+
+  // Proyección vectorial de u sobre v: proy_v(u) = ((u·v)/||v||²) * v
+  project(u, v) {
+    const magSq = this.dot(v, v);
+    if (magSq === 0) return { x: 0, y: 0, z: 0 };
+    const scalar = this.dot(u, v) / magSq;
+    return this.scale(v, scalar);
+  },
+
+  // Ángulo de inclinación de un vector respecto al plano horizontal XZ
+  inclinationAngleDeg(v) {
+    const horiz = Math.hypot(v.x, v.z);
+    return (Math.atan2(v.y, horiz) * 180) / Math.PI;
+  },
+
+  /**
+   * Intersección entre Recta L: P0 + t*d y Plano Pi: A*x + B*y + C*z + D = 0
+   */
+  intersectLinePlane(p0, dir, plane) {
+    const denom = plane.A * dir.x + plane.B * dir.y + plane.C * dir.z;
+    if (Math.abs(denom) < 1e-6) return null; // Paralelos
+    const t = -(plane.A * p0.x + plane.B * p0.y + plane.C * p0.z + plane.D) / denom;
+    return {
+      t,
+      point: {
+        x: p0.x + t * dir.x,
+        y: p0.y + t * dir.y,
+        z: p0.z + t * dir.z
+      }
+    };
+  },
+
+  /**
+   * Distancia perpendicular de un punto Q(x0,y0,z0) a un plano Ax + By + Cz + D = 0
+   */
+  distancePointToPlane(q, plane) {
+    const num = Math.abs(plane.A * q.x + plane.B * q.y + plane.C * q.z + plane.D);
+    const den = Math.hypot(plane.A, plane.B, plane.C);
+    return den === 0 ? 0 : num / den;
+  },
+
+  /**
+   * Construye matriz de transformación homogénea 4x4: T * R_y * S
+   */
+  buildTransformMatrix4(tx, ty, tz, rotYDeg, scale) {
+    const rad = (rotYDeg * Math.PI) / 180;
+    const c = Math.cos(rad);
+    const s = Math.sin(rad);
+    return [
+      [scale * c, 0, scale * s, tx],
+      [0, scale, 0, ty],
+      [-scale * s, 0, scale * c, tz],
+      [0, 0, 0, 1]
+    ];
+  },
+
+  fmt(n, dec = 2) {
+    return Number(n).toFixed(dec);
+  }
+};
+import * as THREE from 'three';
+
+/**
+ * Construye toda la escena 3D de la Estación de Agua Potable de Pescaito:
+ * - Terreno y cuadrícula cartesiana R³
+ * - Torre elevada con soporte cónico (Superficie Cuádrica: Cono) y Tanque Cilíndrico (50 m³)
+ * - Estación de bombeo con 4 bombas centrífugas independientes
+ * - Tuberías de impulsión y colector principal
+ * - Caseta de control (sujeta a transformaciones matriciales)
+ * - Capas pedagógicas (Vectores, Rectas, Plano de corte, Normal)
+ */
+export class StationModel {
+  constructor(scene) {
+    this.scene = scene;
+
+    // Coordenadas clave en R³ (1 unidad = 1 metro)
+    this.tankInletPos = new THREE.Vector3(0, 15.0, 0); // Entrada superior al tanque
+    this.tankCenterPos = new THREE.Vector3(0, 13.4, 0); // Centro geométrico del cilindro
+    this.manifoldPos = new THREE.Vector3(0, 2.2, 5.5);  // Nodo colector de unión
+
+    // Posiciones de las 4 bombas en R³
+    this.pumpPositions = [
+      new THREE.Vector3(-4.5, 1.0, 9.0),
+      new THREE.Vector3(-1.5, 1.0, 9.0),
+      new THREE.Vector3(1.5, 1.0, 9.0),
+      new THREE.Vector3(4.5, 1.0, 9.0)
+    ];
+
+    this.pumps = []; // Referencias a mallas e impulsores
+    this.waterParticles = []; // Partículas animadas de flujo
+
+    this._buildEnvironment();
+    this._buildTowerAndTank();
+    this._buildPumpStation();
+    this._buildControlHouse();
+    this._buildMathOverlays();
+  }
+
+  _buildEnvironment() {
+    // Suelo base (representa el plano y = 0)
+    const groundGeo = new THREE.PlaneGeometry(46, 46);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x131c31,
+      roughness: 0.85,
+      metalness: 0.1
+    });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    this.scene.add(ground);
+
+    // Cuadrícula cartesiana en XZ
+    const grid = new THREE.GridHelper(40, 40, 0x38bdf8, 0x1e293b);
+    grid.position.y = 0.01;
+    this.scene.add(grid);
+
+    // Ejes cartesianos R³ (X: Rojo, Y: Verde, Z: Azul)
+    const axesHelper = new THREE.AxesHelper(6);
+    axesHelper.position.set(0, 0.03, 0);
+    this.scene.add(axesHelper);
+
+    // Losa de cimentación de la estación
+    const slabGeo = new THREE.BoxGeometry(16, 0.3, 16);
+    const slabMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 });
+    const slab = new THREE.Mesh(slabGeo, slabMat);
+    slab.position.set(0, 0.15, 4);
+    slab.receiveShadow = true;
+    this.scene.add(slab);
+  }
+
+  _buildTowerAndTank() {
+    this.towerGroup = new THREE.Group();
+
+    // 1. Base Cónica (Superficie Cuádrica: Cono truncado de soporte estructural)
+    // Ecuación: x² + z² = k²(y - y0)²
+    const coneGeo = new THREE.CylinderGeometry(1.6, 3.6, 11.5, 32, 1, true);
+    const coneMat = new THREE.MeshStandardMaterial({
+      color: 0x475569,
+      roughness: 0.6,
+      metalness: 0.3,
+      side: THREE.DoubleSide
+    });
+    this.coneMesh = new THREE.Mesh(coneGeo, coneMat);
+    this.coneMesh.position.set(0, 5.9, 0);
+    this.coneMesh.castShadow = true;
+    this.towerGroup.add(this.coneMesh);
+
+    // Wireframe pedagógico sobre el cono
+    const coneWire = new THREE.LineSegments(
+      new THREE.EdgesGeometry(coneGeo),
+      new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.25 })
+    );
+    this.coneMesh.add(coneWire);
+
+    // 2. Tanque Cilíndrico de 50 m³ (50.000 Litros)
+    // Radio r = 2.23 m, Altura H = 3.20 m -> V = pi * (2.23)² * 3.20 ≈ 50.0 m³
+    this.tankRadius = 2.23;
+    this.tankMaxHeight = 3.2;
+
+    const tankShellGeo = new THREE.CylinderGeometry(
+      this.tankRadius,
+      this.tankRadius,
+      this.tankMaxHeight,
+      36
+    );
+    const tankShellMat = new THREE.MeshPhysicalMaterial({
+      color: 0x93c5fd,
+      transparent: true,
+      opacity: 0.32,
+      roughness: 0.15,
+      metalness: 0.1,
+      depthWrite: false
+    });
+    this.tankShell = new THREE.Mesh(tankShellGeo, tankShellMat);
+    this.tankShell.position.copy(this.tankCenterPos);
+    this.towerGroup.add(this.tankShell);
+
+    // Borde superior e inferior metálico del tanque
+    const ringGeo = new THREE.TorusGeometry(this.tankRadius, 0.08, 12, 36);
+    const ringMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.6 });
+    const topRing = new THREE.Mesh(ringGeo, ringMat);
+    topRing.rotation.x = Math.PI / 2;
+    topRing.position.set(0, 15.0, 0);
+    const botRing = topRing.clone();
+    botRing.position.set(0, 11.8, 0);
+    this.towerGroup.add(topRing, botRing);
+
+    // 3. Volumen interno de agua dinámica (Cilindro interior escalable en Y)
+    const waterGeo = new THREE.CylinderGeometry(
+      this.tankRadius * 0.96,
+      this.tankRadius * 0.96,
+      this.tankMaxHeight,
+      32
+    );
+    // Desplazar pivote a la base del tanque (y = 11.8)
+    waterGeo.translate(0, this.tankMaxHeight / 2, 0);
+    const waterMat = new THREE.MeshStandardMaterial({
+      color: 0x0ea5e9,
+      emissive: 0x0369a1,
+      emissiveIntensity: 0.35,
+      roughness: 0.2
+    });
+    this.waterMesh = new THREE.Mesh(waterGeo, waterMat);
+    this.waterMesh.position.set(0, 11.8, 0);
+    this.towerGroup.add(this.waterMesh);
+
+    // 4. Cúpula Esférica superior (Superficie Cuádrica: Esfera)
+    const domeGeo = new THREE.SphereGeometry(this.tankRadius, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2.5);
+    const domeMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      metalness: 0.5,
+      roughness: 0.4
+    });
+    this.domeMesh = new THREE.Mesh(domeGeo, domeMat);
+    this.domeMesh.position.set(0, 14.3, 0);
+    this.towerGroup.add(this.domeMesh);
+
+    // Tubería vertical ascendente principal (Recta desde colector hasta cima del tanque)
+    this._createPipeBetween(this.manifoldPos, this.tankInletPos, 0.18, 0x38bdf8);
+
+    // Tubería de distribución hacia barrio Pescaito
+    const outletStart = new THREE.Vector3(1.8, 11.8, 0);
+    const outletEnd = new THREE.Vector3(1.8, 0.5, -6.5);
+    this._createPipeBetween(outletStart, outletEnd, 0.16, 0xf59e0b);
+
+    this.scene.add(this.towerGroup);
+  }
+
+  _buildPumpStation() {
+    // Colector horizontal (Manifold)
+    const manifoldGeo = new THREE.CylinderGeometry(0.24, 0.24, 10.5, 20);
+    manifoldGeo.rotateZ(Math.PI / 2);
+    const manifoldMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.7, roughness: 0.3 });
+    const manifoldMesh = new THREE.Mesh(manifoldGeo, manifoldMat);
+    manifoldMesh.position.copy(this.manifoldPos);
+    this.scene.add(manifoldMesh);
+
+    // Crear las 4 bombas centrífugas
+    this.pumpPositions.forEach((pos, idx) => {
+      const pumpGroup = new THREE.Group();
+      pumpGroup.position.copy(pos);
+
+      // Pedestal
+      const baseMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1.3, 0.4, 1.8),
+        new THREE.MeshStandardMaterial({ color: 0x1e293b })
+      );
+      baseMesh.position.y = -0.5;
+      pumpGroup.add(baseMesh);
+
+      // Motor eléctrico cilíndrico
+      const motorMesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.45, 0.45, 1.2, 20),
+        new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.35, metalness: 0.5 })
+      );
+      motorMesh.rotation.x = Math.PI / 2;
+      motorMesh.position.z = 0.25;
+      motorMesh.castShadow = true;
+      motorMesh.userData = { pumpIndex: idx }; // Para Raycasting (clic 3D)
+      pumpGroup.add(motorMesh);
+
+      // Carcasa de bomba (voluta) + rotor indicador
+      const rotorMesh = new THREE.Mesh(
+        new THREE.TorusGeometry(0.32, 0.08, 10, 20),
+        new THREE.MeshStandardMaterial({ color: 0x10b981, emissive: 0x10b981, emissiveIntensity: 0.5 })
+      );
+      rotorMesh.position.set(0, 0.1, -0.55);
+      pumpGroup.add(rotorMesh);
+
+      // Luz piloto de estado
+      const ledMesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.12, 12, 12),
+        new THREE.MeshBasicMaterial({ color: 0x10b981 })
+      );
+      ledMesh.position.set(0, 0.65, 0.25);
+      pumpGroup.add(ledMesh);
+
+      // Tubería individual de descarga desde bomba hasta el colector
+      const pipeStart = new THREE.Vector3(pos.x, pos.y + 0.35, pos.z - 0.55);
+      const pipeEnd = new THREE.Vector3(pos.x, this.manifoldPos.y, this.manifoldPos.z);
+      this._createPipeBetween(pipeStart, pipeEnd, 0.11, 0x94a3b8);
+
+      this.scene.add(pumpGroup);
+      this.pumps.push({
+        index: idx,
+        group: pumpGroup,
+        motorMesh,
+        rotorMesh,
+        ledMesh,
+        position: pos,
+        pipeStart,
+        pipeEnd
+      });
+    });
+  }
+
+  _buildControlHouse() {
+    // Grupo transformable mediante matriz 4x4 desde la pestaña "Matrices"
+    this.controlHouseGroup = new THREE.Group();
+    this.controlHouseBasePos = new THREE.Vector3(-8.5, 0.3, 3.0);
+    this.controlHouseGroup.position.copy(this.controlHouseBasePos);
+
+    // Estructura principal
+    const walls = new THREE.Mesh(
+      new THREE.BoxGeometry(4.2, 2.8, 5.0),
+      new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.8 })
+    );
+    walls.position.y = 1.4;
+    walls.castShadow = true;
+    walls.receiveShadow = true;
+    this.controlHouseGroup.add(walls);
+
+    // Techo inclinado
+    const roof = new THREE.Mesh(
+      new THREE.BoxGeometry(4.6, 0.3, 5.4),
+      new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 })
+    );
+    roof.position.y = 2.95;
+    this.controlHouseGroup.add(roof);
+
+    // Ventana panorámica de sala SCADA
+    const windowMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.2, 1.2),
+      new THREE.MeshStandardMaterial({
+        color: 0x38bdf8,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.6
+      })
+    );
+    windowMesh.position.set(2.11, 1.6, 0);
+    windowMesh.rotation.y = Math.PI / 2;
+    this.controlHouseGroup.add(windowMesh);
+
+    this.scene.add(this.controlHouseGroup);
+  }
+
+  _buildMathOverlays() {
+    this.mathGroup = new THREE.Group();
+
+    // Flechas vectoriales (ArrowHelper)
+    this.arrowU = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 1, 0x38bdf8, 0.5, 0.3);
+    this.arrowV = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 1, 0xf59e0b, 0.5, 0.3);
+    this.arrowCross = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 1, 0xf43f5e, 0.5, 0.3);
+    this.arrowProj = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 1, 0x10b981, 0.45, 0.25);
+
+    this.mathGroup.add(this.arrowU, this.arrowV, this.arrowCross, this.arrowProj);
+
+    // Línea infinita extendida que representa la ecuación de la recta L1 en R³
+    const lineMat = new THREE.LineDashedMaterial({
+      color: 0x38bdf8,
+      dashSize: 0.4,
+      gapSize: 0.2
+    });
+    const lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 10, 0)]);
+    this.extendedLine = new THREE.Line(lineGeo, lineMat);
+    this.mathGroup.add(this.extendedLine);
+
+    // Plano geométrico Pi: Ax + By + Cz + D = 0
+    const planeGeo = new THREE.PlaneGeometry(18, 18, 10, 10);
+    const planeMat = new THREE.MeshBasicMaterial({
+      color: 0xa855f7,
+      transparent: true,
+      opacity: 0.22,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    this.cuttingPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
+    this.cuttingPlaneMesh.rotation.x = -Math.PI / 2;
+
+    // Borde del plano
+    const planeEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(planeGeo),
+      new THREE.LineBasicMaterial({ color: 0xc084fc })
+    );
+    this.cuttingPlaneMesh.add(planeEdges);
+    this.mathGroup.add(this.cuttingPlaneMesh);
+
+    // Vector Normal al Plano
+    this.arrowNormal = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 8, 0), 3.0, 0xc084fc, 0.5, 0.3);
+    this.mathGroup.add(this.arrowNormal);
+
+    // Esfera marcadora de intersección Recta - Plano
+    this.intersectionMarker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.28, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xfef08a })
+    );
+    this.mathGroup.add(this.intersectionMarker);
+
+    this.scene.add(this.mathGroup);
+  }
+
+  _createPipeBetween(p1, p2, radius, color) {
+    const dir = new THREE.Vector3().subVectors(p2, p1);
+    const len = dir.length();
+    const geo = new THREE.CylinderGeometry(radius, radius, len, 16);
+    const mat = new THREE.MeshStandardMaterial({
+      color,
+      metalness: 0.5,
+      roughness: 0.35,
+      transparent: true,
+      opacity: 0.85
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(p1).addScaledVector(dir, 0.5);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+    this.scene.add(mesh);
+    return mesh;
+  }
+
+  /**
+   * Actualiza la visualizacion 3D de vectores u (Bomba A -> Tanque) y v (Bomba B -> Tanque)
+   */
+  updateVectorsVisual(pumpIdxA, pumpIdxB, showVectors, showLines) {
+    const posA = this.pumpPositions[pumpIdxA];
+    const posB = this.pumpPositions[pumpIdxB];
+    const target = this.tankInletPos;
+
+    const u = new THREE.Vector3().subVectors(target, posA);
+    const v = new THREE.Vector3().subVectors(target, posB);
+    const cross = new THREE.Vector3().crossVectors(u, v);
+
+    // Proyección de u sobre v
+    const projScalar = u.dot(v) / v.lengthSq();
+    const projVec = v.clone().multiplyScalar(projScalar);
+
+    this.arrowU.visible = showVectors;
+    this.arrowV.visible = showVectors;
+    this.arrowCross.visible = showVectors && cross.length() > 0.01;
+    this.arrowProj.visible = showLines && projVec.length() > 0.01;
+    this.extendedLine.visible = showLines;
+
+    if (showVectors) {
+      this.arrowU.position.copy(posA);
+      this.arrowU.setDirection(u.clone().normalize());
+      this.arrowU.setLength(u.length(), 0.5, 0.3);
+
+      this.arrowV.position.copy(posB);
+      this.arrowV.setDirection(v.clone().normalize());
+      this.arrowV.setLength(v.length(), 0.5, 0.3);
+
+      if (cross.length() > 0.01) {
+        const crossLen = Math.min(cross.length() * 0.15, 6); // Escala visual controlada
+        this.arrowCross.position.copy(target);
+        this.arrowCross.setDirection(cross.clone().normalize());
+        this.arrowCross.setLength(crossLen, 0.5, 0.3);
+      }
+    }
+
+    if (showLines) {
+      // Recta paramétrica extendida P(t) = posA + t * u para t in [-0.3, 1.3]
+      const pStart = posA.clone().addScaledVector(u, -0.25);
+      const pEnd = posA.clone().addScaledVector(u, 1.25);
+      this.extendedLine.geometry.setFromPoints([pStart, pEnd]);
+      this.extendedLine.computeLineDistances();
+
+      // Proyección dibujada desde posB hacia la dirección de v
+      this.arrowProj.position.copy(posB);
+      this.arrowProj.setDirection(projVec.clone().normalize());
+      this.arrowProj.setLength(projVec.length(), 0.45, 0.25);
+    }
+  }
+
+  /**
+   * Actualiza el Plano Pi en 3D y su vector normal
+   */
+  updatePlaneVisual(y0, tiltDeg, showPlane, intersectionPt) {
+    this.cuttingPlaneMesh.visible = showPlane;
+    this.arrowNormal.visible = showPlane;
+    this.intersectionMarker.visible = showPlane && intersectionPt !== null;
+
+    const tiltRad = THREE.MathUtils.degToRad(tiltDeg);
+    this.cuttingPlaneMesh.position.set(0, y0, 0);
+    this.cuttingPlaneMesh.rotation.set(-Math.PI / 2 + tiltRad, 0, 0);
+
+    // Normal del plano: n = (0, cos(tilt), sin(tilt))
+    const normalDir = new THREE.Vector3(0, Math.cos(tiltRad), Math.sin(tiltRad)).normalize();
+    this.arrowNormal.position.set(0, y0, 0);
+    this.arrowNormal.setDirection(normalDir);
+
+    if (intersectionPt) {
+      this.intersectionMarker.position.set(intersectionPt.x, intersectionPt.y, intersectionPt.z);
+    }
+  }
+
+  /**
+   * Aplica transformación afín a la Caseta de Control
+   */
+  applyControlHouseTransform(dx, dz, rotYDeg, scale) {
+    this.controlHouseGroup.position.set(
+      this.controlHouseBasePos.x + dx,
+      this.controlHouseBasePos.y,
+      this.controlHouseBasePos.z + dz
+    );
+    this.controlHouseGroup.rotation.y = THREE.MathUtils.degToRad(rotYDeg);
+    this.controlHouseGroup.scale.set(scale, scale, scale);
+  }
+
+  /**
+   * Actualiza nivel visual del agua en el tanque y giro de rotores activos
+   */
+  updateFrame(dt, tankRatio, pumpStates) {
+    // Nivel de agua en el cilindro (mínimo 0.02 para evitar escala 0)
+    const clampedRatio = Math.max(0.02, Math.min(1, tankRatio));
+    this.waterMesh.scale.y = clampedRatio;
+
+    // Animar bombas activas
+    pumpStates.forEach((state, idx) => {
+      const pumpObj = this.pumps[idx];
+      if (state.active) {
+        pumpObj.rotorMesh.rotation.z += dt * (4 + state.flow * 0.4);
+        pumpObj.ledMesh.material.color.setHex(0x10b981);
+        pumpObj.motorMesh.material.emissive.setHex(0x064e3b);
+      } else {
+        pumpObj.ledMesh.material.color.setHex(0xf43f5e);
+        pumpObj.motorMesh.material.emissive.setHex(0x000000);
+      }
+    });
+  }
+}
+import { MathEngine } from './mathEngine.js';
+
+export class UIController {
+  constructor(state, stationModel, onCameraPreset) {
+    this.state = state;
+    this.station = stationModel;
+    this.onCameraPreset = onCameraPreset;
+
+    this._initTabs();
+    this._renderPumpCards();
+    this._bindEvents();
+    this.refreshAllMath();
+  }
+
+  _initTabs() {
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        tabBtns.forEach((b) => b.classList.remove('active'));
+        tabContents.forEach((c) => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+      });
+    });
+
+    // Toggle móvil
+    const toggleBtn = document.getElementById('toggle-panel-btn');
+    const sidebar = document.getElementById('control-panel');
+    toggleBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('collapsed');
+    });
+  }
+
+  _renderPumpCards() {
+    const container = document.getElementById('pumps-container');
+    container.innerHTML = '';
+
+    this.state.pumps.forEach((pump, idx) => {
+      const pos = this.station.pumpPositions[idx];
+      const card = document.createElement('div');
+      card.className = `pump-card ${pump.active ? 'active' : ''}`;
+      card.id = `pump-card-${idx}`;
+
+      card.innerHTML = `
+        <div class="pump-top">
+          <span class="pump-title">Bomba P${idx + 1}</span>
+          <button class="pump-toggle" data-idx="${idx}">${pump.active ? 'ON' : 'OFF'}</button>
+        </div>
+        <div class="pump-coords">Pos: (${pos.x}, ${pos.y}, ${pos.z})</div>
+        <div class="pump-flow-label">
+          <span>Caudal:</span>
+          <strong id="pump-flow-val-${idx}">${pump.flow} L/s</strong>
+        </div>
+        <input type="range" min="5" max="20" step="0.5" value="${pump.flow}" data-idx="${idx}" class="pump-slider" />
+      `;
+      container.appendChild(card);
+    });
+
+    // Eventos de encendido y caudal
+    container.querySelectorAll('.pump-toggle').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const idx = Number(e.target.dataset.idx);
+        this.togglePump(idx);
+      });
+    });
+
+    container.querySelectorAll('.pump-slider').forEach((slider) => {
+      slider.addEventListener('input', (e) => {
+        const idx = Number(e.target.dataset.idx);
+        this.state.pumps[idx].flow = Number(e.target.value);
+        document.getElementById(`pump-flow-val-${idx}`).textContent = `${this.state.pumps[idx].flow} L/s`;
+      });
+    });
+  }
+
+  togglePump(idx) {
+    this.state.pumps[idx].active = !this.state.pumps[idx].active;
+    const card = document.getElementById(`pump-card-${idx}`);
+    const btn = card.querySelector('.pump-toggle');
+    card.classList.toggle('active', this.state.pumps[idx].active);
+    btn.textContent = this.state.pumps[idx].active ? 'ON' : 'OFF';
+  }
+
+  _bindEvents() {
+    // Velocidad de simulación
+    const speedSlider = document.getElementById('sim-speed-slider');
+    speedSlider.addEventListener('input', (e) => {
+      this.state.simSpeed = Number(e.target.value);
+      document.getElementById('sim-speed-val').textContent = `${this.state.simSpeed}x`;
+    });
+
+    // Presets de cámara
+    document.querySelectorAll('[data-cam]').forEach((btn) => {
+      btn.addEventListener('click', () => this.onCameraPreset(btn.dataset.cam));
+    });
+
+    // Pestaña Vectores
+    ['vec-pump-a', 'vec-pump-b', 'vis-vectors', 'vis-lines'].forEach((id) => {
+      document.getElementById(id).addEventListener('change', () => this.refreshVectorsMath());
+    });
+
+    // Pestaña Planos
+    ['plane-y-slider', 'plane-tilt-slider', 'vis-plane', 'vis-quadrics'].forEach((id) => {
+      document.getElementById(id).addEventListener('input', () => this.refreshPlanesMath());
+    });
+
+    // Pestaña Matrices
+    ['trans-x', 'trans-z', 'rot-y', 'scale-k'].forEach((id) => {
+      document.getElementById(id).addEventListener('input', () => this.refreshMatrixMath());
+    });
+
+    document.getElementById('reset-transform-btn').addEventListener('click', () => {
+      document.getElementById('trans-x').value = 0;
+      document.getElementById('trans-z').value = 0;
+      document.getElementById('rot-y').value = 0;
+      document.getElementById('scale-k').value = 1;
+      this.refreshMatrixMath();
+    });
+  }
+
+  updateHydraulicsHUD(qIn, qOut) {
+    const net = qIn - qOut;
+    const pct = (this.state.tankVolume / this.state.tankCapacity) * 100;
+    const height = (this.state.tankVolume / this.state.tankCapacity) * this.station.tankMaxHeight;
+
+    document.getElementById('tank-percent').textContent = `${pct.toFixed(1)}%`;
+    document.getElementById('tank-bar').style.width = `${pct}%`;
+    document.getElementById('tank-volume').textContent = `${this.state.tankVolume.toFixed(2)} m³`;
+    document.getElementById('tank-height').textContent = `${height.toFixed(2)} m`;
+
+    document.getElementById('q-in').textContent = `${qIn.toFixed(2)} L/s`;
+    document.getElementById('q-out').textContent = `${qOut.toFixed(2)} L/s`;
+
+    const netEl = document.getElementById('q-net');
+    netEl.textContent = `${net >= 0 ? '+' : ''}${net.toFixed(2)} L/s`;
+    netEl.className = net >= 0 ? 'text-emerald' : 'text-rose';
+  }
+
+  refreshAllMath() {
+    this.refreshVectorsMath();
+    this.refreshPlanesMath();
+    this.refreshMatrixMath();
+  }
+
+  refreshVectorsMath() {
+    const idxA = Number(document.getElementById('vec-pump-a').value);
+    const idxB = Number(document.getElementById('vec-pump-b').value);
+    const showVec = document.getElementById('vis-vectors').checked;
+    const showLines = document.getElementById('vis-lines').checked;
+
+    const A = this.station.pumpPositions[idxA];
+    const B = this.station.pumpPositions[idxB];
+    const T = this.station.tankInletPos;
+
+    // Vectores desplazamiento hacia el tanque T(0, 15, 0)
+    const u = MathEngine.subtract(T, A);
+    const v = MathEngine.subtract(T, B);
+    const magU = MathEngine.magnitude(u);
+    const magV = MathEngine.magnitude(v);
+    const dotUV = MathEngine.dot(u, v);
+    const crossUV = MathEngine.cross(u, v);
+    const angleDeg = MathEngine.angleBetweenDeg(u, v);
+    const inclDeg = MathEngine.inclinationAngleDeg(u);
+    const projUV = MathEngine.project(u, v);
+
+    this.station.updateVectorsVisual(idxA, idxB, showVec, showLines);
+
+    const f = MathEngine.fmt;
+    const html = `
+      <div class="math-section">
+        <div class="math-label">1. Vectores Posición y Desplazamiento</div>
+        <div class="katex-render" data-tex="P_${idxA + 1}(${A.x}, ${A.y}, ${A.z}), \\quad T(${T.x}, ${T.y}, ${T.z})"></div>
+        <div class="katex-render" data-tex="\\vec{u} = \\overrightarrow{P_${idxA + 1}T} = \\langle ${f(u.x)}, ${f(u.y)}, ${f(u.z)} \\rangle"></div>
+        <div class="katex-render" data-tex="\\vec{v} = \\overrightarrow{P_${idxB + 1}T} = \\langle ${f(v.x)}, ${f(v.y)}, ${f(v.z)} \\rangle"></div>
+        <div class="katex-render" data-tex="\\|\\vec{u}\\| = ${f(magU)}\\text{ m}, \\quad \\|\\vec{v}\\| = ${f(magV)}\\text{ m}"></div>
+      </div>
+
+      <div class="math-section">
+        <div class="math-label">2. Producto Punto, Cruz y Ángulos</div>
+        <div class="katex-render" data-tex="\\vec{u} \\cdot \\vec{v} = ${f(dotUV)}"></div>
+        <div class="katex-render" data-tex="\\vec{u} \\times \\vec{v} = \\langle ${f(crossUV.x)}, ${f(crossUV.y)}, ${f(crossUV.z)} \\rangle"></div>
+        <div class="katex-render" data-tex="\\theta(\\vec{u},\\vec{v}) = ${f(angleDeg)}^\\circ \\quad | \\quad \\alpha_{\\text{elev}} = ${f(inclDeg)}^\\circ"></div>
+        <div class="katex-render" data-tex="\\text{proy}_{\\vec{v}}\\vec{u} = \\langle ${f(projUV.x)}, ${f(projUV.y)}, ${f(projUV.z)} \\rangle"></div>
+      </div>
+
+      <div class="math-section">
+        <div class="math-label">3. Ecuaciones de la Recta L₁ (P${idxA + 1} → Tanque)</div>
+        <div class="katex-render" data-tex="\\text{Vectorial: } \\vec{r}(t) = (${A.x}, ${A.y}, ${A.z}) + t\\langle ${f(u.x)}, ${f(u.y)}, ${f(u.z)} \\rangle"></div>
+        <div class="katex-render" data-tex="\\text{Paramétrica: } \\begin{cases} x = ${A.x} ${u.x >= 0 ? '+' : ''}${f(u.x)}t \\\\ y = ${A.y} + ${f(u.y)}t \\\\ z = ${A.z} ${u.z >= 0 ? '+' : ''}${f(u.z)}t \\end{cases}"></div>
+        <div class="katex-render" data-tex="\\text{Simétrica: } \\frac{x - (${A.x})}{${f(u.x)}} = \\frac{y - ${A.y}}{${f(u.y)}} = \\frac{z - ${A.z}}{${f(u.z)}}"></div>
+      </div>
+    `;
+
+    const container = document.getElementById('math-vectors-output');
+    container.innerHTML = html;
+    this._renderKatexIn(container);
+  }
+
+  refreshPlanesMath() {
+    const y0 = Number(document.getElementById('plane-y-slider').value);
+    const tiltDeg = Number(document.getElementById('plane-tilt-slider').value);
+    const showPlane = document.getElementById('vis-plane').checked;
+    const showQuadrics = document.getElementById('vis-quadrics').checked;
+
+    document.getElementById('plane-y-val').textContent = `${y0.toFixed(1)} m`;
+    document.getElementById('plane-tilt-val').textContent = `${tiltDeg}°`;
+
+    // Resaltado de superficie cuádrica (cono de soporte)
+    this.station.coneMesh.material.wireframe = showQuadrics;
+
+    // Normal del plano n = (0, cos(tilt), sin(tilt)) pasando por P0(0, y0, 0)
+    const rad = (tiltDeg * Math.PI) / 180;
+    const A = 0;
+    const B = Math.cos(rad);
+    const C = Math.sin(rad);
+    const D = -(B * y0);
+
+    const plane = { A, B, C, D };
+
+    // Intersección con la tubería principal (desde manifoldPos hasta tankInletPos)
+    const p0 = this.station.manifoldPos;
+    const dir = MathEngine.subtract(this.station.tankInletPos, p0);
+    const inter = MathEngine.intersectLinePlane(p0, dir, plane);
+
+    // Distancia del centro del tanque C(0, 13.4, 0) al plano Pi
+    const distTank = MathEngine.distancePointToPlane(this.station.tankCenterPos, plane);
+
+    this.station.updatePlaneVisual(y0, tiltDeg, showPlane, inter ? inter.point : null);
+
+    const f = MathEngine.fmt;
+    const interTex = inter
+      ? `I(${f(inter.point.x)}, ${f(inter.point.y)}, ${f(inter.point.z)}) \\quad (t = ${f(inter.t)})`
+      : `\\text{Recta paralela al plano}`;
+
+    const html = `
+      <div class="math-section">
+        <div class="math-label">1. Ecuación General del Plano Π</div>
+        <div class="katex-render" data-tex="\\vec{n} = \\langle 0, ${f(B, 3)}, ${f(C, 3)} \\rangle"></div>
+        <div class="katex-render" data-tex="\\Pi: ${f(B, 2)}y ${C >= 0 ? '+' : ''}${f(C, 2)}z ${D >= 0 ? '+' : ''}${f(D, 2)} = 0"></div>
+        <div class="katex-render" data-tex="d(\\text{Centro Tanque}, \\Pi) = ${f(distTank)}\\text{ m}"></div>
+      </div>
+
+      <div class="math-section">
+        <div class="math-label">2. Intersección Tubería Principal ∩ Plano Π</div>
+        <div class="katex-render" data-tex="${interTex}"></div>
+      </div>
+
+      <div class="math-section">
+        <div class="math-label">3. Superficies Cuádricas de la Estación</div>
+        <div class="katex-render" data-tex="\\text{Tanque (Cilindro): } x^2 + z^2 = 2.23^2, \\; y \\in [11.8, 15.0]"></div>
+        <div class="katex-render" data-tex="\\text{Torre (Cono): } x^2 + z^2 = 0.03(y - 24.2)^2"></div>
+        <div class="katex-render" data-tex="\\text{Cúpula (Esfera): } x^2 + (y - 14.3)^2 + z^2 = 2.23^2"></div>
+      </div>
+    `;
+
+    const container = document.getElementById('math-planes-output');
+    container.innerHTML = html;
+    this._renderKatexIn(container);
+  }
+
+  refreshMatrixMath() {
+    const dx = Number(document.getElementById('trans-x').value);
+    const dz = Number(document.getElementById('trans-z').value);
+    const rotY = Number(document.getElementById('rot-y').value);
+    const scale = Number(document.getElementById('scale-k').value);
+
+    document.getElementById('trans-x-val').textContent = `${dx.toFixed(1)} m`;
+    document.getElementById('trans-z-val').textContent = `${dz.toFixed(1)} m`;
+    document.getElementById('rot-y-val').textContent = `${rotY}°`;
+    document.getElementById('scale-k-val').textContent = `${scale.toFixed(2)}x`;
+
+    this.station.applyControlHouseTransform(dx, dz, rotY, scale);
+
+    const M = MathEngine.buildTransformMatrix4(dx, 0, dz, rotY, scale);
+    const f = MathEngine.fmt;
+
+    const matrixTex = `
+      M = T \\cdot R_y(${rotY}^\\circ) \\cdot S(${f(scale)}) = 
+      \\begin{bmatrix}
+      ${f(M[0][0])} & 0 & ${f(M[0][2])} & ${f(M[0][3])} \\\\
+      0 & ${f(M[1][1])} & 0 & 0 \\\\
+      ${f(M[2][0])} & 0 & ${f(M[2][2])} & ${f(M[2][3])} \\\\
+      0 & 0 & 0 & 1
+      \\end{bmatrix}
+    `;
+
+    const html = `
+      <div class="math-section">
+        <div class="math-label">Matriz Afín Homogénea (4×4)</div>
+        <div class="katex-render" data-tex="${matrixTex}"></div>
+        <div class="katex-render" data-tex="\\det(M) = k^3 = ${f(Math.pow(scale, 3), 3)} \\text{ (Factor de volumen)}"></div>
+      </div>
+    `;
+
+    const container = document.getElementById('math-matrix-output');
+    container.innerHTML = html;
+    this._renderKatexIn(container);
+  }
+
+  _renderKatexIn(container) {
+    if (!window.katex) return;
+    container.querySelectorAll('.katex-render').forEach((el) => {
+      window.katex.render(el.dataset.tex, el, {
+        throwOnError: false,
+        displayMode: true
+      });
+    });
+  }
+}
+
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { StationModel } from './stationModel.js';
+import { UIController } from './uiController.js';
+
+// Estado global de la simulación hidráulica (Pescaito, Santa Marta)
+const simState = {
+  // Demanda: 17,000 hab * 150 L/hab/día = 2,550,000 L/día = 29.5138 L/s
+  demandLps: 29.51,
+  tankCapacity: 50.0, // 50 m³ (50,000 L)
+  tankVolume: 30.0,   // Inicia al 60% (30 m³)
+  simSpeed: 60,       // 1 seg real = 60 seg simulados
+  pumps: [
+    { active: true, flow: 12.0 },
+    { active: true, flow: 12.0 },
+    { active: true, flow: 10.0 },
+    { active: false, flow: 10.0 }
+  ]
+};
+
+// 1. Inicializar Escena, Cámara y Renderizador WebGL
+const container = document.getElementById('canvas-container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b1120);
+scene.fog = new THREE.FogExp2(0x0b1120, 0.015);
+
+const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(16, 14, 22);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+container.appendChild(renderer.domElement);
+
+// 2. Controles Orbitales
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.target.set(0, 7.5, 2);
+controls.maxPolarAngle = Math.PI / 2 - 0.02; // Evita atravesar el suelo
+
+// 3. Iluminación Arquitectónica
+const ambientLight = new THREE.AmbientLight(0x94a3b8, 1.1);
+scene.add(ambientLight);
+
+const sunLight = new THREE.DirectionalLight(0xffffff, 2.0);
+sunLight.position.set(18, 28, 16);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(1024, 1024);
+scene.add(sunLight);
+
+const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.8);
+rimLight.position.set(-15, 10, -15);
+scene.add(rimLight);
+
+// 4. Instanciar Modelo 3D y Controlador UI
+const station = new StationModel(scene);
+
+function setCameraPreset(preset) {
+  const presets = {
+    overview: { pos: [16, 14, 22], target: [0, 7.5, 2] },
+    pumps:    { pos: [0, 5.5, 16], target: [0, 1.5, 8.5] },
+    tank:     { pos: [7, 15.5, 8], target: [0, 13.4, 0] },
+    control:  { pos: [-14, 5, 9],  target: [-8.5, 1.8, 3] }
+  };
+  const p = presets[preset];
+  if (!p) return;
+  camera.position.set(...p.pos);
+  controls.target.set(...p.target);
+}
+
+const ui = new UIController(simState, station, setCameraPreset);
+
+// 5. Raycasting para encender/apagar bombas haciendo clic directo en el 3D
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+
+renderer.domElement.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0) return; // Solo clic izquierdo
+  pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+  pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(pointer, camera);
+  const pumpMeshes = station.pumps.map((p) => p.motorMesh);
+  const hits = raycaster.intersectObjects(pumpMeshes);
+
+  if (hits.length > 0) {
+    const pumpIdx = hits[0].object.userData.pumpIndex;
+    ui.togglePump(pumpIdx);
+  }
+});
+
+// 6. Responsive Resize
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Esperar a que KaTeX cargue para renderizar ecuaciones iniciales
+window.addEventListener('load', () => ui.refreshAllMath());
+
+// 7. Bucle Principal de Animación (requestAnimationFrame)
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.1);
+
+  // Calcular caudal total de entrada (L/s)
+  const qIn = simState.pumps.reduce((acc, p) => (p.active ? acc + p.flow : acc), 0);
+  const qOut = simState.tankVolume > 0.05 ? simState.demandLps : 0;
+
+  // Balance diferencial de volumen: dV/dt = (Q_in - Q_out) / 1000 [m³/s]
+  const netLps = qIn - qOut;
+  const dV = (netLps / 1000) * dt * simState.simSpeed;
+  simState.tankVolume = Math.max(0, Math.min(simState.tankCapacity, simState.tankVolume + dV));
+
+  // Actualizar visualizaciones 3D y HUD
+  const ratio = simState.tankVolume / simState.tankCapacity;
+  station.updateFrame(dt, ratio, simState.pumps);
+  ui.updateHydraulicsHUD(qIn, qOut);
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
